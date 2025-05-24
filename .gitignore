@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pkl
+*.csv
+*.xlsx
+*.log
+.env
+.idea/
+.vscode/
+secrets/
+data/
+stock_data/
+sector_data/
+indicators/
