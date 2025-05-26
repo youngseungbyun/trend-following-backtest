@@ -8,23 +8,34 @@ from modules.data_loader import load_sector_stock_csv, get_stock_ohlcv
 from modules.strategy import should_exit_stock, save_stock_ohlcv
 from modules.indicators import calculate_indicators
 from modules.sector_map import sector_code_map
-from modules.stock_filter import get_top_supertrend_stock  # ✅ 변경된 함수 사용
+from modules.stock_filter import get_golden_supertrend_stock
 
-# 기본 설정
+# ✅ 전략 설정
+MA_SHORT = 5
+MA_LONG = 30
+GOLDEN_LOOKBACK_DAYS = 14
+
+# 실행 설정
 start_date = "20200101"
-end_date = "20210501"
+end_date = "20250101"
 initial_cash = 100000000
 cash = initial_cash
 fee_rate = 0.002
-excluded_sector_codes = {"1003", "1005", "1045"}
 
-# KOSPI 시계열 불러오기
+# 제외 업종 (제공된 리스트 기반)
+excluded_sector_codes = {
+    "1002", "1003", "1004", "1028", "1034", "1035",
+    "1150", "1151", "1152", "1153", "1154", "1155", "1156", "1157", "1158", "1159", "1160", "1167",
+    "1182", "1224", "1227", "1232", "1244", "1894"
+}
+
+# KOSPI 시계열
 kospi_df = pd.read_csv("data/index_1001_코스피.csv", index_col=0, parse_dates=True)
 kospi_df = kospi_df[start_date:end_date]
 kospi_returns = kospi_df['종가'] / kospi_df['종가'].iloc[0] * 100
 kospi_returns.index = kospi_returns.index.normalize()
 
-# 시그널 로딩 (한글 컬럼명 대응)
+# 주도 업종 시그널 로딩
 signals = pd.read_csv("outputs/leading_sectors_timeseries.csv", parse_dates=["날짜"])
 signals = signals[(signals["날짜"] >= start_date) & (signals["날짜"] <= end_date)]
 
@@ -46,7 +57,14 @@ for _, row in tqdm(signals.iterrows(), total=len(signals)):
         continue
     stock_dict = load_sector_stock_csv(sector_path)
 
-    top_stock = get_top_supertrend_stock(stock_dict, date, kospi_df)  # ✅ 여기 변경
+    top_stock = get_golden_supertrend_stock(
+        stock_dict,
+        date,
+        kospi_df,
+        lookback_days=GOLDEN_LOOKBACK_DAYS,
+        ma_short=MA_SHORT,
+        ma_long=MA_LONG
+    )
     if not top_stock:
         continue
 
@@ -56,7 +74,7 @@ for _, row in tqdm(signals.iterrows(), total=len(signals)):
         pnl_events.append((position['entry_date'], cash, 'buy', position['name']))
         continue
     elif position["code"] != top_stock["code"]:
-        exit_price = position["df"]["종가"].iloc[-1]
+        exit_price = position["df"].loc[:date]['종가'].iloc[-1]  # ✅ 정확한 매도 종가
         net_ret = (exit_price / position["entry_price"]) * (1 - fee_rate)**2
         cash *= net_ret
         pnl.append(cash)
@@ -68,15 +86,14 @@ for _, row in tqdm(signals.iterrows(), total=len(signals)):
             "수익률": net_ret - 1
         })
         pnl_events.append((date, cash, 'sell', position["name"]))
-
-        # 교체 진입
         position = top_stock
         pnl_events.append((position['entry_date'], cash, 'buy', position['name']))
         continue
 
-    # 동일 종목 유지 → 매도 조건 확인
-    if should_exit_stock(position["df"]):
-        exit_price = position["df"]["종가"].iloc[-1]
+    # 동일 종목 유지 → 매도 조건 판단 (날짜 제한 적용)
+    df_slice = position["df"].loc[:date]  # ✅ 현재 날짜까지만 슬라이싱
+    if should_exit_stock(df_slice):
+        exit_price = df_slice['종가'].iloc[-1]
         net_ret = (exit_price / position["entry_price"]) * (1 - fee_rate)**2
         cash *= net_ret
         pnl.append(cash)
@@ -90,7 +107,7 @@ for _, row in tqdm(signals.iterrows(), total=len(signals)):
         pnl_events.append((date, cash, 'sell', position["name"]))
         position = None
 
-# ✅ 성과 출력 및 기존 그래프 그대로 유지
+# ✅ 성과 출력 및 그래프 (기존 유지)
 if summary_results:
     summary_df = pd.DataFrame(summary_results)
     summary_df.set_index("종목", inplace=True)

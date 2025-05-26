@@ -2,20 +2,23 @@
 
 import pandas as pd
 import os
-
-def calculate_ma(df):
+def calculate_ma(df, short, long):
     df = df.copy()
-    df['MA5'] = df['종가'].rolling(5).mean()
-    df['MA60'] = df['종가'].rolling(60).mean()
-    df['GoldenCross'] = (df['MA5'] > df['MA60']) & (df['MA5'].shift(1) <= df['MA60'].shift(1))
-    df['DeadCross'] = (df['MA5'] < df['MA60']) & (df['MA5'].shift(1) >= df['MA60'].shift(1))
+    df[f'MA{short}'] = df['종가'].rolling(short).mean()
+    df[f'MA{long}'] = df['종가'].rolling(long).mean()
+    
+    # ✅ MA60은 항상 추가 (매도 조건용)
+    if 'MA60' not in df.columns:
+        df['MA60'] = df['종가'].rolling(60).mean()
+
+    df['GoldenCross'] = (df[f'MA{short}'] > df[f'MA{long}']) & \
+                        (df[f'MA{short}'].shift(1) <= df[f'MA{long}'].shift(1))
+
+    df['DeadCross'] = (df[f'MA{short}'] < df['MA60']) & \
+                      (df[f'MA{short}'].shift(1) >= df['MA60'].shift(1))
     return df
 
 def calculate_supertrend(df, period=10, multiplier=3):
-    """
-    Supertrend 및 ATR 계산
-    반환: df['Supertrend'], df['ATR']
-    """
     df = df.copy()
     hl2 = (df['고가'] + df['저가']) / 2
     tr = pd.concat([
@@ -31,7 +34,6 @@ def calculate_supertrend(df, period=10, multiplier=3):
     supertrend = [True] * len(df)
     for i in range(1, len(df)):
         curr_close = df['종가'].iloc[i]
-        prev_close = df['종가'].iloc[i - 1]
         if curr_close > upperband.iloc[i - 1]:
             supertrend[i] = True
         elif curr_close < lowerband.iloc[i - 1]:
@@ -43,7 +45,6 @@ def calculate_supertrend(df, period=10, multiplier=3):
             if not supertrend[i] and upperband.iloc[i] > upperband.iloc[i - 1]:
                 upperband.iloc[i] = upperband.iloc[i - 1]
 
-    df['ATR'] = atr
     df['Supertrend'] = supertrend
     return df
 
@@ -62,10 +63,15 @@ def calculate_rsi(close, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_indicators(df, kospi_df):
+def calculate_indicators(df, kospi_df, ma_short=5, ma_long=60):
+    """
+    전체 지표 계산 함수 (파라미터로 MA 기준 설정 가능)
+    - ma_short: 골든/데드크로스용 단기 이동평균
+    - ma_long: 골든/데드크로스용 장기 이동평균
+    """
     df = df.copy()
-    df = calculate_supertrend(df)       # → Supertrend + ATR 포함됨
-    df = calculate_ma(df)
+    df = calculate_supertrend(df)
+    df = calculate_ma(df, ma_short, ma_long)
     df['RSI'] = calculate_rsi(df['종가'])
     df['RS'] = calculate_rs(df, kospi_df)
     return df
