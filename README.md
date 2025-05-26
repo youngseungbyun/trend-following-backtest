@@ -1,5 +1,5 @@
 
-# Trend-Following Backtest System
+# 업종 주도주 기반 Supertrend + MA Cross 추세 추종 전략
 
 백테스트 기반의 트렌드 추종 전략 구현 프로젝트입니다. 업종의 Supertrend 기반 주도 업종을 식별하고, 해당 업종 내에서 골든크로스 발생 종목을 매수한 뒤 RSI 및 교체 조건에 따라 매도합니다.
 
