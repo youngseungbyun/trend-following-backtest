@@ -1,4 +1,4 @@
-### 업종 주도주 기반 Supertrend + MA Cross 추세 추종 전략
+# 업종 주도주 기반 Supertrend + MA Cross 추세 추종 전략
 
 ## 📌 전략 개요
 
