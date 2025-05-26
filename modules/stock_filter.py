@@ -1,41 +1,54 @@
+# stock_filter.py
+
+import pandas as pd
 from modules.data_loader import get_stock_ohlcv
 from modules.indicators import calculate_indicators
-import pandas as pd
 
-def filter_first_golden_cross_stock(stock_dict, start_date, end_date, kospi_df):
-    first_cross = None
+def get_top_supertrend_stock(stock_dict, date, kospi_df):
+    """
+    업종 내 종목 중:
+        - Supertrend가 상승 중(True)
+        - 시세 100일 이상 존재
+        - 해당 날짜까지 데이터 존재
+        - ATR이 가장 높은 종목 1개 선정
+    """
+    top_atr = -float("inf")
+    best = None
 
     for code, name in stock_dict.items():
-        df = get_stock_ohlcv(code, start_date, end_date)
-        if df.empty or len(df) < 100:
+        df = get_stock_ohlcv(code, "20200101", "20250101")
+        if df.empty or date not in df.index or len(df) < 100:
+            continue
+        try:
+            df_ind = calculate_indicators(df.loc[:date], kospi_df.loc[:date])
+            if df_ind.empty or "Supertrend" not in df_ind.columns:
+                continue
+
+            # Supertrend가 상승 중인 종목만 후보로 인정
+            if not df_ind["Supertrend"].iloc[-1]:
+                continue
+
+            # ATR 계산 (calculate_indicators에서 같이 계산되도록 해야 함)
+            if "ATR" not in df_ind.columns:
+                continue  # 안전망
+
+            atr = df_ind["ATR"].iloc[-1]
+            if pd.notna(atr) and atr > top_atr:
+                top_atr = atr
+                best = {
+                    "code": code,
+                    "name": name,
+                    "entry_price": df_ind['종가'].iloc[-1],
+                    "entry_date": df_ind.index[-1],
+                    "df": df_ind
+                }
+        except Exception as e:
+            print(f"[WARN] {code} 처리 실패: {e}")
             continue
 
-        df = calculate_indicators(df, kospi_df)
-        if 'MA5' not in df or 'MA60' not in df:
-            continue
-
-        for i in range(1, len(df)):
-            prev_ma5 = df['MA5'].iloc[i - 1]
-            prev_ma60 = df['MA60'].iloc[i - 1]
-            curr_ma5 = df['MA5'].iloc[i]
-            curr_ma60 = df['MA60'].iloc[i]
-
-            if pd.notna(prev_ma5) and pd.notna(prev_ma60) and pd.notna(curr_ma5) and pd.notna(curr_ma60):
-                if prev_ma5 <= prev_ma60 and curr_ma5 > curr_ma60:
-                    cross_date = df.index[i]
-                    if (first_cross is None) or (cross_date < first_cross['date']):
-                        first_cross = {
-                            'code': code,
-                            'name': name,
-                            'date': cross_date,
-                            'ma5': curr_ma5,
-                            'ma60': curr_ma60
-                        }
-                    break  # 종목당 첫 골든크로스만 확인
-
-    if first_cross:
-        print(f"[SELECT] ✅ 골든크로스 가장 빠른 종목: {first_cross['code']} | {first_cross['name']} | 날짜: {first_cross['date'].date()}")
-        return [(first_cross['code'], first_cross['name'], first_cross['ma5'], first_cross['ma60'])]
+    if best:
+        print(f"[SELECT] ✅ Supertrend 상승 + ATR 최고 종목: {best['code']} | {best['name']} | ATR: {top_atr:.4f}")
     else:
-        print("[FILTER] ❌ 골든크로스 발생 종목 없음")
-        return []
+        print("[SELECT] ❌ 조건 만족하는 종목 없음")
+
+    return best

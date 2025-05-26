@@ -1,110 +1,96 @@
-# 프로젝트 구조 기준 전체 Python 파일 구성 및 전략 흐름 정리 (2025 최신, 자동 저장 매크로 포함)
+# main.py
 
-# 📁 pykrx/trend_following_project/
-
-# ├── main.py
 import os, glob, pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import dates as mdates
-from modules.signal_logic import find_leading_sectors
-from modules.stock_filter import filter_first_golden_cross_stock
-from modules.data_loader import load_sector_stock_csv
-from modules.data_loader import get_sector_index_ohlcv
-from modules.sector_map import sector_code_map
-from modules.crawler import ensure_sector_stock_csv
-from modules.indicators import calculate_rsi
+from tqdm import tqdm
+from modules.data_loader import load_sector_stock_csv, get_stock_ohlcv
 from modules.strategy import should_exit_stock, save_stock_ohlcv
-import numpy as np
+from modules.indicators import calculate_indicators
+from modules.sector_map import sector_code_map
+from modules.stock_filter import get_top_supertrend_stock  # ✅ 변경된 함수 사용
 
-excluded_sector_codes = {"1003", "1005", "1045"}
+# 기본 설정
 start_date = "20200101"
-end_date = "20250101"
+end_date = "20210501"
+initial_cash = 100000000
+cash = initial_cash
+fee_rate = 0.002
+excluded_sector_codes = {"1003", "1005", "1045"}
+
+# KOSPI 시계열 불러오기
 kospi_df = pd.read_csv("data/index_1001_코스피.csv", index_col=0, parse_dates=True)
 kospi_df = kospi_df[start_date:end_date]
 kospi_returns = kospi_df['종가'] / kospi_df['종가'].iloc[0] * 100
 kospi_returns.index = kospi_returns.index.normalize()
 
-files = glob.glob("data/index_*.csv")
-sector_data_dict = {}
-for path in files:
-    code = path.split("_")[1]
-    if code in excluded_sector_codes:
-        continue
-    df = pd.read_csv(path, index_col=0, parse_dates=True)
-    sector_data_dict[code] = df
+# 시그널 로딩 (한글 컬럼명 대응)
+signals = pd.read_csv("outputs/leading_sectors_timeseries.csv", parse_dates=["날짜"])
+signals = signals[(signals["날짜"] >= start_date) & (signals["날짜"] <= end_date)]
 
-leading_sectors = find_leading_sectors(sector_data_dict, kospi_df)
-print(f"[DEBUG] 주도 업종 수: {len(leading_sectors)}")
-
+position = None
 summary_results = []
 pnl = []
 dates = []
 pnl_events = []
 
-initial_cash = 100000000  # 1억 원 시작
-cash = initial_cash
-
-for code, _, rs in leading_sectors:
-    if code in excluded_sector_codes:
+for _, row in tqdm(signals.iterrows(), total=len(signals)):
+    date = pd.to_datetime(row['날짜'])
+    sector_code = str(row["업종코드"])
+    sector_name = row["업종명"]
+    if sector_code in excluded_sector_codes:
         continue
 
-    name = sector_code_map.get(code, f"업종코드 {code}")
-    print(f"\n🔥 주도 업종: {code} | {name} | RS: {rs:.2f}")
-
-    ensure_sector_stock_csv(code)
-    sector_path = f"sector_data/sector_{code}.csv"
+    sector_path = f"sector_data/sector_{sector_code}.csv"
     if not os.path.exists(sector_path):
         continue
     stock_dict = load_sector_stock_csv(sector_path)
-    candidates = filter_first_golden_cross_stock(stock_dict, start_date, end_date, kospi_df)
 
-    print("📈 매수 후보 종목:")
-    for c in candidates:
-        print(f"  ✔️ {c}")
-
-    if not candidates:
+    top_stock = get_top_supertrend_stock(stock_dict, date, kospi_df)  # ✅ 여기 변경
+    if not top_stock:
         continue
 
-    for ticker, name, *_ in candidates:
-        stock_path = f"stock_data/{ticker}.csv"
-        if not os.path.exists(stock_path):
-            save_stock_ohlcv(ticker, start_date, end_date)
-        if not os.path.exists(stock_path):
-            continue
+    # 신규 진입 or 교체매매
+    if position is None:
+        position = top_stock
+        pnl_events.append((position['entry_date'], cash, 'buy', position['name']))
+        continue
+    elif position["code"] != top_stock["code"]:
+        exit_price = position["df"]["종가"].iloc[-1]
+        net_ret = (exit_price / position["entry_price"]) * (1 - fee_rate)**2
+        cash *= net_ret
+        pnl.append(cash)
+        dates.append(date)
+        summary_results.append({
+            "종목": position["name"],
+            "매수일": position["entry_date"],
+            "매도일": date,
+            "수익률": net_ret - 1
+        })
+        pnl_events.append((date, cash, 'sell', position["name"]))
 
-        df = pd.read_csv(stock_path, index_col=0, parse_dates=True)
-        df['RSI'] = calculate_rsi(df['종가'])
-        df['MA5'] = df['종가'].rolling(5).mean()
-        df['MA60'] = df['종가'].rolling(60).mean()
+        # 교체 진입
+        position = top_stock
+        pnl_events.append((position['entry_date'], cash, 'buy', position['name']))
+        continue
 
-        entry_price = None
-        for i in range(60, len(df)):
-            if entry_price is None:
-                if df['MA5'].iloc[i] > df['MA60'].iloc[i] and df['MA5'].iloc[i-1] <= df['MA60'].iloc[i-1]:
-                    entry_price = df['종가'].iloc[i]
-                    entry_date = df.index[i]
-                    pnl_events.append((entry_date, cash, 'buy', name))
-                    break
+    # 동일 종목 유지 → 매도 조건 확인
+    if should_exit_stock(position["df"]):
+        exit_price = position["df"]["종가"].iloc[-1]
+        net_ret = (exit_price / position["entry_price"]) * (1 - fee_rate)**2
+        cash *= net_ret
+        pnl.append(cash)
+        dates.append(date)
+        summary_results.append({
+            "종목": position["name"],
+            "매수일": position["entry_date"],
+            "매도일": date,
+            "수익률": net_ret - 1
+        })
+        pnl_events.append((date, cash, 'sell', position["name"]))
+        position = None
 
-        if entry_price:
-            for j in range(i+1, len(df)):
-                if should_exit_stock(df.iloc[:j+1]):
-                    exit_price = df['종가'].iloc[j]
-                    exit_date = df.index[j]
-                    fee = 0.002
-                    net_return = (exit_price / entry_price) * (1 - fee)**2
-                    cash *= net_return
-                    summary_results.append({
-                        "종목": name,
-                        "매수일": entry_date,
-                        "매도일": exit_date,
-                        "수익률": net_return - 1
-                    })
-                    pnl.append(cash)
-                    dates.append(exit_date)
-                    pnl_events.append((exit_date, cash, 'sell', name))
-                    break
-
+# ✅ 성과 출력 및 기존 그래프 그대로 유지
 if summary_results:
     summary_df = pd.DataFrame(summary_results)
     summary_df.set_index("종목", inplace=True)
