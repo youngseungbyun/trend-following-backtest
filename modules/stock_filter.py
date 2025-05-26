@@ -6,9 +6,9 @@ def get_golden_supertrend_stock(
     stock_dict,
     date,
     kospi_df,
-    lookback_days=10,
+    lookback_days=14,
     ma_short=5,
-    ma_long=30
+    ma_long=60
 ):
     """
     완화된 진입 조건:

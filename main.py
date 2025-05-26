@@ -44,7 +44,7 @@ for _, row in tqdm(signals.iterrows(), total=len(signals)):
     sector_code = str(row["업종코드"])
     if sector_code in excluded_sector_codes:
         continue
-    
+
     if position is not None:
         try:
             df_slice = position["df"].loc[:date]
@@ -149,8 +149,6 @@ if position is not None:
                 "보유일": final_holding_days,
                 "수익률": net_ret - 1
             })
-            print(f"🧮 {position['name']} | 매수일: {position['entry_date']} | 매도가격: {exit_price:.2f} | 매수가격: {position['entry_price']:.2f} | 수익률: {(net_ret-1)*100:.2f}%")
-
             pnl_events.append((final_df.index[-1], cash, 'final-sell', position["name"]))
             print(f"✅ 최종 청산: {position['name']} (보유일: {final_holding_days}일, 수익률: {(net_ret-1)*100:.2f}%)")
         else:
@@ -218,16 +216,16 @@ if summary_results:
                          xy=(ev_date, strategy_returns.loc[ev_date]),
                          xytext=(0, yoffset),
                          textcoords='offset points',
-                         ha='center', color=color, fontsize=8,
+                         ha='center', color=color, fontsize=5,
                          arrowprops=dict(arrowstyle='->', color=color))
                          
-        ax1.set_title("누적 수익률 비교: 전략 vs KOSPI")
+        ax1.set_title("Portfolio vs KOSPI")
         ax1.set_ylabel("누적 수익률 (%)")
         ax1.grid(True)
         ax1.legend()
 
         ax2.plot(strategy_df.index, strategy_df['자산'], label="자산 PnL", color='blue')
-        ax2.set_title("총 자산 변화 (PnL)")
+        ax2.set_title("PnL")
         ax2.set_ylabel("자산 (KRW)")
         ax2.grid(True)
         ax2.legend()

@@ -4,7 +4,7 @@ import pandas as pd
 from pykrx import stock
 import os
 
-def should_exit_stock(df, rsi_threshold=85, trailing_stop_pct=0.11):
+def should_exit_stock(df, rsi_threshold=86, trailing_stop_pct=0.18):
     """
     보유 중인 종목의 매도 조건 판단
     조건:
