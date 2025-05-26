@@ -165,7 +165,6 @@ if summary_results:
     summary_df.set_index("종목", inplace=True)
     print("\n📈 수익률 종합 요약:")
     print(summary_df)
-
     returns = summary_df['수익률']
     cumulative_return = cash / initial_cash - 1
     win_rate = (returns > 0).sum() / len(returns)
@@ -218,7 +217,22 @@ if summary_results:
                          textcoords='offset points',
                          ha='center', color=color, fontsize=5,
                          arrowprops=dict(arrowstyle='->', color=color))
-                         
+
+        
+        summary_text = (
+            f"Sharpe : {sharpe:.2f}  |  "
+            f"Win Rate : {win_rate*100:.2f}%  |  "
+            f"MDD : {mdd:.2%}  |  "
+            f"Trades : {len(summary_results)}  |  "
+            f"Return : {cumulative_return*100:.2f}%"
+        )
+
+        ax1.text(0.01, 0.97, summary_text,
+                transform=ax1.transAxes,
+                verticalalignment='top',
+                fontsize=12,
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.5))
+                        
         ax1.set_title("Portfolio vs KOSPI")
         ax1.set_ylabel("누적 수익률 (%)")
         ax1.grid(True)
